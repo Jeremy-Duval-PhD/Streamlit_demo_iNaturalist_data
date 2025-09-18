@@ -16,6 +16,15 @@ def clean_df(df):
     
     return df
 
+def init_all_session_state_var(raw_df, df, file_name):
+    st.session_state['data_name'] = file_name
+    st.session_state['raw_data'] = raw_df
+    st.session_state['data'] = df
+    # get min and max years and generate a range to avoid missing years
+    min_year = min(list(df.index.year))
+    max_year = max(list(df.index.year))
+    st.session_state['years'] = list(range(min_year, max_year+1,1))
+    
 
 st.title("Load your iNaturalist data")
 
@@ -25,10 +34,8 @@ if uploaded_file is not None:
     file_name = uploaded_file.name
     if 'data_name' not in st.session_state \
     or file_name != st.session_state['data_name']:
-        st.session_state['data_name'] = file_name
-        st.session_state['raw_data'] = raw_df
         df = clean_df(raw_df)
-        st.session_state['data'] = df
+        init_all_session_state_var(raw_df, df, file_name)
 else:
     df = pd.DataFrame()
     raw_df = pd.DataFrame()
