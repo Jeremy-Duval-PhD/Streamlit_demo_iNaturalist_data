@@ -164,6 +164,25 @@ def plot_annual_centroids(filter_df):
     plot_pydeck_map(centroids, st)
 
 
+def plot_movement_analysis(filter_df):
+    st.write("TODO")
+    
+def plot_centroids_regression(filter_df):
+    st.write("TODO")
+
+
+def plot_distance_analysis(filter_df):
+    st.write("TODO")
+    
+    
+def plot_manova(filter_df):
+    st.write("TODO")
+    
+    #plot_centroids_regression(filter_df)
+    #plot_distance_analysis(filter_df)
+
+
+
 
 
 if 'data_name' not in st.session_state:
@@ -173,30 +192,31 @@ else:
     set_title(df)
 
     
-    col0_1, col0_2, col0_3 = st.columns([1,1,1], vertical_alignment='center')
+    col0_1, col0_2, col0_3 = st.columns([1,1,1], vertical_alignment='top')
+    col1_1, col1_2, col1_3 = st.columns([1,1,1], vertical_alignment='center')
     col0_1.markdown('### Number of observation per year')
     nb_obs_year_fig = plt.figure()
     noy = df['latitude'].resample('YE').count()
     noy.index = noy.index.year
     noy.plot()
-    col0_1.pyplot(nb_obs_year_fig)
+    col1_1.pyplot(nb_obs_year_fig)
     
     col0_2.markdown('### Quality grade proportion')
     qg_pie_fig = plt.figure()
     vc = df['quality_grade'].value_counts(normalize=True)
     vc.plot.pie(labels=get_pie_lbl(vc))
-    col0_2.pyplot(qg_pie_fig)
+    col1_2.pyplot(qg_pie_fig)
     
     #filters part
     col0_3.markdown('### Data filters')
     
     min_year = st.session_state['years'][0]
     max_year = st.session_state['years'][-1]
-    year_filter = col0_3.slider('Filter years', \
+    year_filter = col1_3.slider('Filter years', \
                               min_year, \
                               max_year, \
                               (min_year,max_year))
-    quality_grade_filter = col0_3.segmented_control(
+    quality_grade_filter = col1_3.segmented_control(
         'Observation quality', 
         ['research','all'], \
         selection_mode='single',\
@@ -224,4 +244,8 @@ else:
     plot_regr_scatt(filter_df)
     st.write('')
     plot_annual_centroids(filter_df)
+    st.write('')
+    plot_movement_analysis(filter_df)
+    st.write('')
+    plot_manova(filter_df)
     st.write('')
