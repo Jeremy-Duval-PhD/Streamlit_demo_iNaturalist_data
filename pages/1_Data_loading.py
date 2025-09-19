@@ -18,6 +18,8 @@ def clean_df(df):
     col_to_keep = get_clean_columns_order()
     df = df[col_to_keep]
     
+    df['year'] = df.index.year
+    
     return df
 
 def init_all_session_state_var(raw_df, df, file_name):
