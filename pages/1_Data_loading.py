@@ -7,11 +7,15 @@ def upload_file_to_df(uploaded_file):
         df = pd.read_csv(uploaded_file, index_col='observed_on', parse_dates=True)
     return df
 
+def get_clean_columns_order():
+    return ['url', 'image_url', 'time_zone', 'quality_grade', \
+            'latitude', 'longitude', 'public_positional_accuracy', \
+            'scientific_name', 'common_name', 'iconic_taxon_name']
+
 @st.cache_data
 def clean_df(df):
     df = df.drop_duplicates()
-    col_to_keep = ['time_zone', 'quality_grade', 'license', 'url', 'image_url', 'num_identification_agreements', 
-               'latitude', 'longitude', 'public_positional_accuracy', 'scientific_name', 'common_name', 'iconic_taxon_name']
+    col_to_keep = get_clean_columns_order()
     df = df[col_to_keep]
     
     return df
@@ -37,9 +41,16 @@ if uploaded_file is not None:
         df = clean_df(raw_df)
         init_all_session_state_var(raw_df, df, file_name)
 else:
-    df = pd.DataFrame()
-    raw_df = pd.DataFrame()
+    if 'data_name' in st.session_state:
+        file_name = st.session_state['data_name']
+        raw_df = st.session_state['raw_data']
+        df = st.session_state['data']
+    else:
+        df = pd.DataFrame()
+        raw_df = pd.DataFrame()
 
 tab1, tab2 = st.tabs(["Cleaned Data", "Raw Data"])       
-tab1.dataframe(df)    
+tab1.dataframe(df, column_config={'image_url':st.column_config.ImageColumn(),\
+                                  'url':st.column_config.LinkColumn(display_text="Observation link")},\
+               column_order=get_clean_columns_order())    
 tab2.dataframe(raw_df)

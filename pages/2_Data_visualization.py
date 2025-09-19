@@ -76,9 +76,13 @@ else:
     st.write('')
     
     # figures part
+    st.markdown('### Kernel Density Estimator')
     col2_1, col2_2 = st.columns([1,1], vertical_alignment='center') 
     
-    col2_1.markdown('### Kernel Density Estimator')
-    sns_kde = plt.figure()
-    sns.jointplot(data=filter_df, x=df.index, y='latitude', kind="kde", fill=True)
-    col2_1.pyplot(sns_kde)
+    sns_kde_lat = sns.jointplot(data=filter_df, x=filter_df.index, \
+                            y='latitude', kind="kde", fill=True)
+    col2_1.pyplot(sns_kde_lat)
+    
+    sns_kde_lon = sns.jointplot(data=filter_df, x=filter_df.index, \
+                            y='longitude', kind="kde", fill=True)
+    col2_2.pyplot(sns_kde_lon)
