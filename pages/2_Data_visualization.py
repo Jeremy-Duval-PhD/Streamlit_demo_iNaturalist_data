@@ -20,7 +20,10 @@ def set_title(df):
 def get_pie_lbl(vc):
     return [str(x) + '(' + str(int(round(y*100,0))) + '%)' for x, y in zip(vc.index, vc.values)]
 
-
+@st.fragment
+def show_map(df):
+    st.map(df)
+    
 
 
 if 'data_name' not in st.session_state:
@@ -71,7 +74,7 @@ else:
     # map
     st.markdown(f'### Observations\' map between {year_filter[0]} ' \
                    +f'and {year_filter[1]}')
-    st.map(filter_df)
+    show_map(filter_df)
     
     st.write('')
     
