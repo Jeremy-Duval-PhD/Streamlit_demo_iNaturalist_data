@@ -1,7 +1,5 @@
 import streamlit as st
 
-st.logo('assets/logo.png', size='large', link='https://github.com/Jeremy-Duval-PhD')
-#st.image('assets/banner.jpg')
 
 st.title("iNaturalist data explorer")
 
@@ -33,3 +31,5 @@ st.markdown('''
             and follow my work on [GitHub](https://github.com/Jeremy-Duval-PhD)
             and [OrcID](https://orcid.org/0000-0001-6037-5486).
             ''')
+            
+st.image('assets/banner.jpg')

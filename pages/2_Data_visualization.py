@@ -4,8 +4,10 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
 
+
 def __get_1st_cat(df, col):
     return df[col].value_counts(sort='asc').index[0]
+
 
 def set_title(df):
     cm_name = __get_1st_cat(df, 'common_name')
@@ -17,13 +19,31 @@ def set_title(df):
     st.subheader(taxon.capitalize())
     st.write('')
     
+    
 def get_pie_lbl(vc):
     return [str(x) + '(' + str(int(round(y*100,0))) + '%)' for x, y in zip(vc.index, vc.values)]
 
+
 @st.fragment
-def show_map(df):
-    st.map(df)
+def show_map(filter_df):
+    st.map(filter_df)
     
+    
+@st.fragment
+def plot_KDE(filter_df):
+    st.markdown('### Kernel Density Estimator')
+    st.write('Streamlit may have trouble loading the KDE graph and displaying it as lines that is difficult to read.')
+    col2_1, col2_2 = st.columns([1,1], vertical_alignment='center') 
+    
+    sns_kde_lat = sns.jointplot(data=filter_df, x=filter_df.index, \
+                            y='latitude', kind="kde", fill=True)
+    col2_1.pyplot(sns_kde_lat)
+    
+    sns_kde_lon = sns.jointplot(data=filter_df, x=filter_df.index, \
+                            y='longitude', kind="kde", fill=True)
+    col2_2.pyplot(sns_kde_lon)
+
+
 
 
 if 'data_name' not in st.session_state:
@@ -79,13 +99,4 @@ else:
     st.write('')
     
     # figures part
-    st.markdown('### Kernel Density Estimator')
-    col2_1, col2_2 = st.columns([1,1], vertical_alignment='center') 
-    
-    sns_kde_lat = sns.jointplot(data=filter_df, x=filter_df.index, \
-                            y='latitude', kind="kde", fill=True)
-    col2_1.pyplot(sns_kde_lat)
-    
-    sns_kde_lon = sns.jointplot(data=filter_df, x=filter_df.index, \
-                            y='longitude', kind="kde", fill=True)
-    col2_2.pyplot(sns_kde_lon)
+    plot_KDE(filter_df)
