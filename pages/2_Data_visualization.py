@@ -21,6 +21,19 @@ def set_title(df):
     st.write('')
     
     
+@st.dialog('⚠️ Important informations')
+def dialog_important_info():
+    st.markdown('''
+                This application provides simple data visualization tools and 
+                allows for preliminary analysis of geospatial changes in 
+                observations of a species over time.
+                
+                It is important to note that we cannot rely on this information 
+                alone. It remains generic and is influenced by the observers 
+                themselves.
+                ''')
+    
+    
 def get_pie_lbl(vc):
     return [str(x) + '(' + str(int(round(y*100,0))) + '%)' for x, y in zip(vc.index, vc.values)]
 
@@ -188,6 +201,10 @@ def plot_manova(filter_df):
 if 'data_name' not in st.session_state:
     st.badge("⚠️ Please load a dataset", color="orange")
 else:
+    if 'important_dialog' not in st.session_state:
+        st.session_state['important_dialog'] = True
+        dialog_important_info()
+    
     df = st.session_state['data']
     set_title(df)
 
