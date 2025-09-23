@@ -4,6 +4,13 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
 import pydeck as pdk
+import statsmodels.api as sm
+from statsmodels.multivariate.manova import MANOVA
+from scipy.stats import shapiro, levene
+from sklearn.preprocessing import PowerTransformer
+from skbio.stats.distance import DistanceMatrix
+from skbio.stats.distance import permanova
+from scipy.spatial.distance import pdist, squareform
 
 
 def __get_1st_cat(df, col):
@@ -48,11 +55,13 @@ def plot_KDE(filter_df):
     st.markdown('''
                 ### Kernel Density Estimator
                 ''')
-    with st.popover("warning"):
-        st.badge('''
-                ⚠️ *Streamlit may have trouble loading the KDE graph and displaying
-                it as lines that is difficult to read.*'''
-                , color="orange")
+    
+    #with st.popover("warning"):
+    #    st.badge('''
+    #            ⚠️ *Streamlit may have trouble loading the KDE graph and displaying
+    #            it as lines that is difficult to read.*'''
+    #            , color="orange")
+    
     st.markdown('''
                 KDE plots are used to analyze the distribution of data and the 
                 relationships between them.
@@ -62,17 +71,17 @@ def plot_KDE(filter_df):
                 ''')
     col2_1, col2_2 = st.columns([1,1], vertical_alignment='center') 
     
-    sns_kde_lat = sns.jointplot(data=filter_df, x=filter_df.index, \
+    sns_kde_lat = sns.jointplot(data=filter_df, x=filter_df['year'], \
                             y='latitude', kind="kde", fill=True)
     col2_1.pyplot(sns_kde_lat)
     
-    sns_kde_lon = sns.jointplot(data=filter_df, x=filter_df.index, \
+    sns_kde_lon = sns.jointplot(data=filter_df, x=filter_df['year'], \
                             y='longitude', kind="kde", fill=True)
     col2_2.pyplot(sns_kde_lon)
 
 
 @st.fragment
-def plot_regr_scatt(filter_df):
+def plot_regr_scatt(filter_df, year_filter):
     st.markdown('''
                 ### Regression Plots
                 Here, the graphs present spatial observations in the form of 
@@ -83,9 +92,19 @@ def plot_regr_scatt(filter_df):
                 relevant, between years makes it possible to potentially see 
                 initial geospatial changes over time.
                 ''')
+    col1, col2 = st.columns([3,1], vertical_alignment='top') 
     
-    filter_df = filter_df.copy()
-    st.pyplot(sns.lmplot(data=filter_df, x="longitude", y="latitude", hue="year"))
+    years_lst = list(range(year_filter[0], year_filter[-1]+1))
+    years_selected = col2.multiselect(
+        "Years to show :",
+        years_lst,
+        default=years_lst
+        )
+    
+    nfilter_df = filter_df.copy()
+    nfilter_df = nfilter_df[nfilter_df['year'].isin(years_selected)]
+    
+    col1.pyplot(sns.lmplot(data=nfilter_df, x="longitude", y="latitude", hue="year"))
 
 
 def get_centroids(filter_df):
@@ -177,38 +196,7 @@ def plot_annual_centroids(filter_df):
     plot_pydeck_map(centroids, st)
 
 
-def plot_movement_analysis(filter_df):
-    st.write("TODO")
-    
-def plot_centroids_regression(filter_df):
-    st.write("TODO")
-
-
-def plot_distance_analysis(filter_df):
-    st.write("TODO")
-    
-    
-def plot_manova(filter_df):
-    st.write("TODO")
-    
-    #plot_centroids_regression(filter_df)
-    #plot_distance_analysis(filter_df)
-
-
-
-
-
-if 'data_name' not in st.session_state:
-    st.badge("⚠️ Please load a dataset", color="orange")
-else:
-    if 'important_dialog' not in st.session_state:
-        st.session_state['important_dialog'] = True
-        dialog_important_info()
-    
-    df = st.session_state['data']
-    set_title(df)
-
-    
+def plot_first_and_filters(df):
     col0_1, col0_2, col0_3 = st.columns([1,1,1], vertical_alignment='top')
     col1_1, col1_2, col1_3 = st.columns([1,1,1], vertical_alignment='center')
     col0_1.markdown('### Number of observation per year')
@@ -244,8 +232,359 @@ else:
     if quality_grade_filter != 'all':
         filter_df = filter_df[filter_df['quality_grade'] == quality_grade_filter]
 
+    return filter_df, year_filter, quality_grade_filter
+
+
+def interv_long_lati_regr_tab(model_lat, model_lon):
+    summary_data = {
+        "Variable": ["Latitude", "Longitude"],
+        "Intercept": [model_lat.params["const"], model_lon.params["const"]],
+        "Slope (year)": [model_lat.params["year"], model_lon.params["year"]],
+        "p-value (slope)": [model_lat.pvalues["year"], model_lon.pvalues["year"]],
+        "R²": [model_lat.rsquared, model_lon.rsquared]
+    }
+    summary_df = pd.DataFrame(summary_data)
+    summary_df = summary_df.round(4)
+    
+    st.dataframe(summary_df)
+    
+    if model_lat.pvalues["year"] <= 0.05:
+        st.badge("Year influence latitude", icon=":material/check:", color="green")
+    else:
+        st.badge("Year don't influence latitude", icon=":material/close:", color="red")
+    
+    if model_lon.pvalues["year"] <= 0.05:
+        st.badge("Year influence longitude", icon=":material/check:", color="green")
+    else:
+        st.badge("Year don't influence longitude", icon=":material/close:", color="red")
     
     
+
+def get_predictions_with_ci(model, X):
+    predictions = model.get_prediction(X)
+    pred_summary = predictions.summary_frame(alpha=0.05)  # 95% CI
+    return pred_summary[["mean", "mean_ci_lower", "mean_ci_upper"]]    
+    
+    
+def plot_interv_long_lati_regr(X_sorted, model_lat, lat_pred, model_lon, lon_pred, filter_df):
+    
+    fig, axs = plt.subplots(1, 2, figsize=(14, 6))
+    
+    # Latitude
+    sns.scatterplot(x="year", y="latitude", data=filter_df, ax=axs[0], label="Data")
+    axs[0].plot(X_sorted["year"], lat_pred["mean"], color="red", label="Regression")
+    axs[0].fill_between(X_sorted["year"], lat_pred["mean_ci_lower"], lat_pred["mean_ci_upper"],
+                    color="red", alpha=0.2, label="IC 95%")
+    axs[0].set_title("Latitude vs Year")
+    axs[0].set_xlabel("year")
+    axs[0].set_xticks(X_sorted["year"])
+    axs[0].legend()
+    
+    # Longitude
+    sns.scatterplot(x="year", y="longitude", data=filter_df, ax=axs[1], label="Data")
+    axs[1].plot(X_sorted["year"], lon_pred["mean"], color="red", label="Regression")
+    axs[1].fill_between(X_sorted["year"], lon_pred["mean_ci_lower"], lon_pred["mean_ci_upper"],
+                    color="red", alpha=0.2, label="IC 95%")
+    axs[1].set_title("Longitude vs Year")
+    axs[1].set_xlabel("year")
+    axs[1].set_xticks(X_sorted["year"])
+    axs[1].legend()
+    
+    # General
+    plt.suptitle("Regression of Geographic Coordinates vs. Year", fontsize=16)
+    plt.tight_layout()
+    st.pyplot(fig)
+
+
+@st.fragment
+def plot_interv_long_lati_regression(filter_df, year_filter):
+
+    st.markdown(f'''
+                ### Ression on coordinates between {year_filter[0]} and {year_filter[1]}
+                
+                The following linear regression analyses allow us to determine 
+                whether there is a significant impact of the year on latitude 
+                (or longitude) with a confidence level of 95%.
+                
+                If so, the coefficients will allow us to determine whether latitude 
+                (or longitude) is increasing (positive sign) or decreasing (negative 
+                sign), as well as the rate at which this is happening.         
+                ''')
+                
+    # regressions
+    X = sm.add_constant(filter_df["year"])
+    model_lat = sm.OLS(filter_df["latitude"], X).fit()
+    model_lon = sm.OLS(filter_df["longitude"], X).fit()
+    
+    X_sorted = X.sort_values(by="year")
+    
+    lat_pred = get_predictions_with_ci(model_lat, X_sorted)
+    lon_pred = get_predictions_with_ci(model_lon, X_sorted)
+    
+    # plots
+    plot_interv_long_lati_regr(X_sorted, model_lat, lat_pred, model_lon, lon_pred, filter_df)
+    interv_long_lati_regr_tab(model_lat, model_lon)
+    
+    
+    
+    
+def levene_test(df, variables, container, step=None):
+    # Initialisation d'un tableau de résultats
+    levene_results = []
+    
+    # Test de Levene pour chaque variable
+    invalid_var = []
+    for var in variables:
+        grouped_data = [group[var].values for _, group in df.groupby("year")]
+        stat, p = levene(*grouped_data)
+        levene_results.append({
+            "Variable": var,
+            "Stat": round(stat, 4),
+            "p-value": round(p, 4)
+        })
+        if p < 0.05:
+            invalid_var.append(var)
+    
+    # Résultat sous forme de DataFrame
+    levene_df = pd.DataFrame(levene_results)
+    
+    msg=""
+    if step != None: 
+        msg += f'''
+               📌 Step {step} : 
+               
+               
+                '''
+    msg += '''
+        Variance equality test : 
+        
+        '''
+        
+    if len(invalid_var) == 0 :
+        msg += 'All group variances are similar.'
+    else:
+        msg += 'Variances are differents for variable(s) '
+        for var in invalid_var:
+            msg += f'{var}, '
+        msg = msg[:-2] + '.'
+        
+    container.write(msg)
+    container.write(levene_df)
+    
+    
+    
+def test_normality(data, group_col, variables):
+    results = []
+    grouped = data.groupby(group_col)
+    for name, group in grouped:
+        row = {"year": name}
+        for var in variables:
+            stat, p = shapiro(group[var])
+            row[f"p-value {var}"] = round(p, 4)
+        results.append(row)
+    return pd.DataFrame(results)
+
+
+def normality_test(df, variables, container, step=None):
+    normality_df = test_normality(df, "year", variables)
+    pval_cols = [f"p-value {v}" for v in variables]
+    non_normal_years = normality_df[normality_df[pval_cols].lt(0.05).any(axis=1)]
+    
+    years = non_normal_years['year'].to_list()
+    
+    msg = ""
+    if step != None: 
+        msg += f'''
+               📌 Step {step} : 
+               
+               
+                '''
+    msg += '''
+        Distribution test : 
+        
+        '''
+    if len(years) == 0:
+        msg += 'All years have a normal distribution.'
+    else:
+        msg += 'Years without a normal distribution are '
+        for year in years:
+            msg += f'{year}, '
+        msg = msg[:-2] + '.'
+    container.markdown(msg)
+    container.write(normality_df)
+    
+    need_normalization = (normality_df[pval_cols] < 0.05).any().any()
+    
+    return need_normalization, normality_df
+
+
+def normalisation_by_yeo_johnson(filter_df, variables, normality_df, container):
+    container.markdown('''
+                📌 Step 3:
+                    
+                Normality rejected for certain variables. Application of a Yeo-Johnson transformation.
+                ''')
+
+    # Yeo-Johnson transformation to approximate a gaussian distribution
+    pt = PowerTransformer(method='yeo-johnson')
+    df_transformed = filter_df.copy()
+    df_transformed[variables] = pt.fit_transform(filter_df[variables])
+
+    # normality test after transformation
+    need_normalization, normality_df =  normality_test(df_transformed, variables, \
+                                                       container, step=4)
+    return df_transformed, need_normalization, normality_df
+
+
+def show_manova_test_results(res):
+    stat = res['year']['stat']['Value']["Pillai's trace"]
+    pval = res['year']['stat']['Pr > F']["Pillai's trace"]
+    
+    summary_data = {
+        "Variable": ["year"],
+        "Test": ["Pillai's trace"],
+        "Result": [stat],
+        "p-value": [pval],
+    }
+    summary_df = pd.DataFrame(summary_data)
+    summary_df = summary_df.round(4)
+    
+    st.dataframe(summary_df)
+
+    if pval <= 0.05:
+        st.badge("Year influence coordinates", icon=":material/check:", color="green")
+    else:
+        st.badge("Year don't influence coordinates", icon=":material/close:", color="red")
+    
+
+
+@st.fragment
+def manova_test(filter_df):
+    variables = ["latitude", "longitude"]
+    
+    expander = st.expander('Pre-tests')
+    
+    # Test of variance equality between group
+    levene_test(filter_df, variables, expander, step=1)
+    
+    # Normality test (normality required for MANOVA)
+    need_normalization, normality_df =  normality_test(filter_df, variables, \
+                                                       expander, step=2)
+    
+    if need_normalization:
+        df_transformed, need_normalization, normality_df = \
+            normalisation_by_yeo_johnson(filter_df, variables, normality_df, expander)
+        # Utilisation des données transformées
+        df_for_manova = df_transformed
+    else:
+        expander.markdown('''
+                    📌 Step 3:
+                        
+                    Normality validated.
+                    ''')
+        df_for_manova = filter_df
+    
+    mtv = MANOVA.from_formula('latitude + longitude ~ year', data=df_for_manova)
+    res = mtv.mv_test()
+    show_manova_test_results(res)
+    
+    
+def plot_manova(filter_df, year_filter):
+    st.markdown(f'''
+                ### MANOVA test on coordinates between {year_filter[0]} and {year_filter[1]}
+                
+                The ANOVA test is a variance analysis test used to compare a set 
+                of groups in order to determine whether they are significantly 
+                different.
+                The MANOVA test is a variant that can be used to study the impact 
+                of variables **x** (in this case, *year*) on several related variables 
+                **y** (in this case, *longitude* and *latitude*).
+                These tests are based on three assumptions:
+                1. Independence of observations
+                2. Homogeneity of variances
+                3. Normal distribution 
+                
+                In the pre-test section, we begin by testing the homogeneity of 
+                variances with a Levene's test.
+                
+                Then, we use a Shapiro test to assess whether 
+                the distribution of each variable **y** as a function of **x** 
+                follows a normal distribution.
+                If this is not the case for each year, we perform a Yeo-Johnson 
+                transformation to correct the data distribution.
+                We then perform a new normality test.
+                
+                In all cases, we then perform a MANOVA test, here a Pillai's test, 
+                which has the advantage of being robust and resistant to imbalances 
+                between groups, as well as to the problem of data normality.
+                ''')
+                
+    manova_test(filter_df)
+    
+    
+@st.fragment
+def permanova_test(filter_df, year_filter):
+    st.markdown(f'''
+                ### PERMANOVA test on coordinates between {year_filter[0]} and {year_filter[1]}
+                
+                The PERMANOVA test is a nonparametric variant of MANOVA. 
+                In this sense, this test is more robust but less accurate.
+                ''')
+                
+    filter_df = filter_df.copy()
+    filter_df["observation_id"] = ["obs_" + str(i) for i in range(0, len(filter_df.index))]
+    
+    # distance matrix calculation
+    coords = filter_df[["latitude", "longitude"]].values
+    dist_matrix = squareform(pdist(coords, metric='euclidean'))
+    dm = DistanceMatrix(dist_matrix, ids=filter_df["observation_id"].astype(str))
+    
+    # permanova with year as groups
+    grouping = filter_df["year"].values
+    
+    # Test
+    permanova_result = permanova(dm, grouping=grouping)
+    
+    stat = permanova_result['test statistic']
+    pval = permanova_result['p-value']
+
+    summary_data = {
+        "Variable": ["year"],
+        "Test": ["PERMANOVA, pseudo-F"],
+        "Result": [stat],
+        "p-value": [pval],
+    }
+    summary_df = pd.DataFrame(summary_data)
+    summary_df = summary_df.round(4)
+    
+    st.dataframe(summary_df)
+
+    if pval <= 0.05:
+        st.badge("Year influence coordinates", icon=":material/check:", color="green")
+    else:
+        st.badge("Year don't influence coordinates", icon=":material/close:", color="red")
+    
+
+
+
+
+
+
+
+    
+######### Script #########
+
+if 'data_name' not in st.session_state:
+    st.warning("⚠️ Please load a dataset")
+else:
+    if 'important_dialog' not in st.session_state:
+        st.session_state['important_dialog'] = True
+        dialog_important_info()
+    
+    df = st.session_state['data']
+    set_title(df)
+    
+    filter_df, year_filter, quality_grade_filter = plot_first_and_filters(df)
     st.write('')
 
     # map
@@ -258,11 +597,13 @@ else:
     # figures part
     plot_KDE(filter_df)
     st.write('')
-    plot_regr_scatt(filter_df)
+    plot_regr_scatt(filter_df, year_filter)
     st.write('')
     plot_annual_centroids(filter_df)
     st.write('')
-    plot_movement_analysis(filter_df)
+    plot_interv_long_lati_regression(filter_df, year_filter)
     st.write('')
-    plot_manova(filter_df)
+    plot_manova(filter_df, year_filter)
+    st.write('')
+    permanova_test(filter_df, year_filter)
     st.write('')
