@@ -6,6 +6,8 @@ import seaborn as sns
 import pydeck as pdk
 import statsmodels.api as sm
 from statsmodels.multivariate.manova import MANOVA
+from statsmodels.formula.api import ols
+from statsmodels.stats.multicomp import pairwise_tukeyhsd
 from scipy.stats import shapiro, levene
 from sklearn.preprocessing import PowerTransformer
 from skbio.stats.distance import DistanceMatrix
@@ -436,6 +438,54 @@ def normalisation_by_yeo_johnson(filter_df, variables, normality_df, container):
     return df_transformed, need_normalization, normality_df
 
 
+def posthoc_manova(variables, df_for_manova):
+    
+    st.markdown('''
+                #### MANOVA post hoc
+                
+                MANOVA allows us to determine whether there is a difference between 
+                groups, but not between which groups the difference lies.
+                To do this, we will quickly perform an ANOVA test for each variable 
+                (longitude and latitude), followed by a pairwise Tukey test. 
+                ''')
+    
+    for var in variables:
+        container = st.container()
+        expander = st.expander("Details")
+        container.write(f"\n🔍 Post hoc for {var}")
+        
+        # ANOVA
+        model = ols(f"{var} ~ C(year)", data=df_for_manova).fit()
+        anova_table = sm.stats.anova_lm(model, typ=2)
+        expander.write("ANOVA results :")
+        expander.write(anova_table)
+        f_stat = anova_table["F"][0]
+        p_value_anova = anova_table["PR(>F)"][0]
+        if p_value_anova < 0.05:
+            container.badge("ANOVA has succeed", icon=":material/check:", color="green")
+
+            # Tukey HSD
+            tukey = pairwise_tukeyhsd(endog=df_for_manova[var], \
+                                      groups=df_for_manova["year"], alpha=0.05)
+            
+            tukey_df = pd.DataFrame(data=tukey._results_table.data[1:], \
+                                    columns=tukey._results_table.data[0])
+            expander.write("Tukey results :")
+            expander.write(tukey_df)
+            significatifs = tukey_df[tukey_df["reject"] == True]
+            if significatifs.empty:
+                container.write("Tukey test results - no significant differencies detected.")
+            else: 
+                significatifs["comparaison"] = significatifs["group1"].astype(str) \
+                    + " - " + significatifs["group2"].astype(str)
+                final_df = significatifs[["comparaison", "p-adj"]].rename(columns={"p-adj": "p-value"})
+
+                container.write("Tukey test results - year pairs significantly differents :")
+                container.write(final_df)
+        else:
+            container.badge("ANOVA has failed", icon=":material/close:", color="red")
+
+
 def show_manova_test_results(res):
     stat = res['year']['stat']['Value']["Pillai's trace"]
     pval = res['year']['stat']['Pr > F']["Pillai's trace"]
@@ -488,6 +538,8 @@ def manova_test(filter_df):
     res = mtv.mv_test()
     show_manova_test_results(res)
     
+    posthoc_manova(variables, df_for_manova)
+    
     
 def plot_manova(filter_df, year_filter):
     st.markdown(f'''
@@ -520,6 +572,14 @@ def plot_manova(filter_df, year_filter):
                 ''')
                 
     manova_test(filter_df)
+    
+    
+
+    
+    
+    
+    
+    
     
     
 @st.fragment
