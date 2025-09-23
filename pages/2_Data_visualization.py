@@ -4,15 +4,19 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
 import pydeck as pdk
+from itertools import combinations
+
 import statsmodels.api as sm
 from statsmodels.multivariate.manova import MANOVA
 from statsmodels.formula.api import ols
 from statsmodels.stats.multicomp import pairwise_tukeyhsd
+from statsmodels.stats.multitest import multipletests
+
 from scipy.stats import shapiro, levene
-from sklearn.preprocessing import PowerTransformer
-from skbio.stats.distance import DistanceMatrix
-from skbio.stats.distance import permanova
 from scipy.spatial.distance import pdist, squareform
+
+from sklearn.preprocessing import PowerTransformer
+from skbio.stats.distance import DistanceMatrix, permanova
 
 
 def __get_1st_cat(df, col):
@@ -572,16 +576,75 @@ def plot_manova(filter_df, year_filter):
                 ''')
                 
     manova_test(filter_df)
-    
-    
+     
 
+@st.cache_data(ttl=3600, show_spinner=False)
+def simple_permanova(filter_df, year_filter, grouping, _dm):
+    with st.spinner("PERMANOVA test is running...", show_time=True):
+        permanova_result = permanova(_dm, grouping=grouping)
+        
+        stat = permanova_result['test statistic']
+        pval = permanova_result['p-value']
     
+        summary_data = {
+            "Variable": ["year"],
+            "Test": ["PERMANOVA, pseudo-F"],
+            "Result": [stat],
+            "p-value": [pval],
+        }
+        summary_df = pd.DataFrame(summary_data)
+        summary_df = summary_df.round(4)
     
+    return summary_df, pval
+
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def pairwise_permanova(filter_df, year_filter, grouping, _dm):
+    n = len(np.unique(grouping))
+    nb_combinations = n * (n - 1) // 2
     
+    progress_text = "Paiwise permanova in progress. Please wait."
+    combi_bar = st.progress(0, text=progress_text)
     
+    pairwise_results = []
+    i=0
+    for g1, g2 in combinations(np.unique(grouping), 2):
+        # group index
+        mask = (grouping == g1) | (grouping == g2)
+        
+        # distance sub matrix
+        sub_dm = _dm.filter(filter_df.loc[mask, "observation_id"].astype(str).tolist())
+        
+        # sub groups
+        sub_groups = filter_df.loc[mask, "year"].astype(str).values
+        
+        # PERMANOVA
+        res = permanova(sub_dm, grouping=sub_groups)
+        pairwise_results.append({
+            "Groupe 1": g1,
+            "Groupe 2": g2,
+            "p-value": res["p-value"],
+            "stat": res["test statistic"]
+        })
+        i += 1
+        combi_bar.progress(int(100/nb_combinations*i), text=progress_text)
     
+    # Bonnferroni correction
+    with st.spinner("Boneferroni correction is running...", show_time=True):
+        pairwise_df = pd.DataFrame(pairwise_results)
+        pairwise_df["p-ajusted"] = multipletests(pairwise_df["p-value"], method="bonferroni")[1]
+        pairwise_df = pairwise_df.sort_values("p-ajusted")
     
+        # Results
+        significants = pairwise_df[pairwise_df["p-ajusted"] <= 0.05]
+        significants["Comparaison"] = significants["Groupe 1"].astype(str) \
+            + " - " + significants["Groupe 2"].astype(str)
+        significants = significants[['Comparaison', 'p-ajusted']]
+        significants = significants.rename(columns={"p-ajusted": "p-value"})
     
+    return pairwise_df, significants
+
+
 @st.fragment
 def permanova_test(filter_df, year_filter):
     st.markdown(f'''
@@ -603,29 +666,29 @@ def permanova_test(filter_df, year_filter):
     grouping = filter_df["year"].values
     
     # Test
-    permanova_result = permanova(dm, grouping=grouping)
-    
-    stat = permanova_result['test statistic']
-    pval = permanova_result['p-value']
-
-    summary_data = {
-        "Variable": ["year"],
-        "Test": ["PERMANOVA, pseudo-F"],
-        "Result": [stat],
-        "p-value": [pval],
-    }
-    summary_df = pd.DataFrame(summary_data)
-    summary_df = summary_df.round(4)
-    
+    summary_df, pval = simple_permanova(filter_df, year_filter, grouping, dm)
     st.dataframe(summary_df)
-
     if pval <= 0.05:
         st.badge("Year influence coordinates", icon=":material/check:", color="green")
     else:
         st.badge("Year don't influence coordinates", icon=":material/close:", color="red")
     
-
-
+    
+    #post hoc
+    st.markdown('''
+                #### PERMANOVA post hoc
+                
+                PERMANOVA allows us to determine whether there is a difference between 
+                groups, but not between which groups the difference lies.
+                To do this, we will perform a PERMANOVA test for each variable 
+                pair of years. 
+                ''')
+    
+    pairwise_df, significants = pairwise_permanova(filter_df, year_filter, grouping, dm)
+    st.write("Pairwise PERMANOVA tests results - year pairs significantly differents :")
+    st.write(significants.round(4))
+    expander = st.expander("Details")
+    expander.write(pairwise_df)
 
 
 
