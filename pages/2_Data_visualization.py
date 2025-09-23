@@ -685,10 +685,17 @@ def permanova_test(filter_df, year_filter):
                 ''')
     
     pairwise_df, significants = pairwise_permanova(filter_df, year_filter, grouping, dm)
-    st.write("Pairwise PERMANOVA tests results - year pairs significantly differents :")
-    st.write(significants.round(4))
+    if significants.empty:
+        st.write("Pairwise PERMANOVA tests results - no significant differencies detected.")
+    else: 
+        st.write("Pairwise PERMANOVA tests results - year pairs significantly differents :")
+        st.write(significants.round(4))
     expander = st.expander("Details")
     expander.write(pairwise_df)
+
+
+
+
 
 
 
