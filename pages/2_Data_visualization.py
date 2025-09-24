@@ -372,10 +372,11 @@ def levene_test(df, variables, container, step=None):
     if len(invalid_var) == 0 :
         msg += 'All group variances are similar.'
     else:
-        msg += 'Variances are differents for variable(s). See PERMANOVA test. '
+        msg += 'Variances are differents between groups for variable(s) '
         for var in invalid_var:
             msg += f'{var}, '
         msg = msg[:-2] + '.'
+        
         
     container.write(msg)
     container.write(levene_df)
@@ -520,6 +521,7 @@ def manova_test(filter_df):
     variables = ["latitude", "longitude"]
     
     expander = st.expander('Pre-tests')
+    expander.write('If step 1 or 4 fail, please, see the PERMANOVA test.')
     
     # Test of variance equality between group
     levene_test(filter_df, variables, expander, step=1)
@@ -606,20 +608,34 @@ def pairwise_permanova(filter_df, year_filter, grouping, _dm):
     n = len(np.unique(grouping))
     nb_combinations = n * (n - 1) // 2
     
-    progress_text = "Paiwise permanova in progress. Please wait."
+    progress_text = "Pairwise permanova in progress. Please wait."
     combi_bar = st.progress(0, text=progress_text)
     
+    single_samples = []
     pairwise_results = []
     i=0
     for g1, g2 in combinations(np.unique(grouping), 2):
         # group index
         mask = (grouping == g1) | (grouping == g2)
+        sub_df = filter_df.loc[mask]
+        
+        group_counts = sub_df["year"].value_counts()
+
+        if group_counts.get(g1, 0) < 2 or group_counts.get(g2, 0) < 2:
+            if group_counts.get(g1, 0) < 2 and g1 not in single_samples:
+                single_samples.append(g1)
+            if group_counts.get(g2, 0) < 2 and g2 not in single_samples:
+                single_samples.append(g2)
+            
+            i += 1
+            combi_bar.progress(int(100 / nb_combinations * i), text=progress_text)
+            continue
         
         # distance sub matrix
         sub_dm = _dm.filter(filter_df.loc[mask, "observation_id"].astype(str).tolist())
         
         # sub groups
-        sub_groups = filter_df.loc[mask, "year"].astype(str).values
+        sub_groups = sub_df["year"].astype(str).values
         
         # PERMANOVA
         res = permanova(sub_dm, grouping=sub_groups)
@@ -634,18 +650,34 @@ def pairwise_permanova(filter_df, year_filter, grouping, _dm):
     
     # Bonnferroni correction
     with st.spinner("Boneferroni correction is running...", show_time=True):
-        pairwise_df = pd.DataFrame(pairwise_results)
-        pairwise_df["p-ajusted"] = multipletests(pairwise_df["p-value"], method="bonferroni")[1]
-        pairwise_df = pairwise_df.sort_values("p-ajusted")
-    
-        # Results
-        significants = pairwise_df[pairwise_df["p-ajusted"] <= 0.05]
-        significants["Comparaison"] = significants["Groupe 1"].astype(str) \
-            + " - " + significants["Groupe 2"].astype(str)
-        significants = significants[['Comparaison', 'p-ajusted']]
-        significants = significants.rename(columns={"p-ajusted": "p-value"})
-    
-    return pairwise_df, significants
+        if pairwise_results:
+            pairwise_df = pd.DataFrame(pairwise_results)
+            pairwise_df["p-ajusted"] = multipletests(pairwise_df["p-value"], method="bonferroni")[1]
+            pairwise_df = pairwise_df.sort_values("p-ajusted")
+        
+            # Results
+            significants = pairwise_df[pairwise_df["p-ajusted"] <= 0.05]
+            significants["Comparaison"] = significants["Groupe 1"].astype(str) \
+                + " - " + significants["Groupe 2"].astype(str)
+            significants = significants[['Comparaison', 'p-ajusted']]
+            significants = significants.rename(columns={"p-ajusted": "p-value"})
+        else:
+            pairwise_df = pd.DataFrame()
+            significants = pd.DataFrame()
+            
+    return pairwise_df, significants, single_samples
+
+
+def display_skipped_permanova_years(single_samples):
+    if len(single_samples) > 0:
+        msg = 'Some pairs have been skipped because of lack of observations for years : '
+        for year in sorted(single_samples):
+            msg += f'{year}, '
+        msg = msg[:-2] + '.'
+            
+        
+        with st.popover('Warning'):
+            st.write(msg)
 
 
 @st.fragment
@@ -687,7 +719,10 @@ def permanova_test(filter_df, year_filter):
                 pair of years. 
                 ''')
     
-    pairwise_df, significants = pairwise_permanova(filter_df, year_filter, grouping, dm)
+    pairwise_df, significants,single_samples = pairwise_permanova(filter_df, year_filter, grouping, dm)
+    display_skipped_permanova_years(single_samples)
+    
+    
     if significants.empty:
         st.write("Pairwise PERMANOVA tests results - no significant differencies detected.")
     else: 
@@ -719,7 +754,7 @@ else:
     
     filter_df, year_filter, quality_grade_filter = plot_first_and_filters(df)
     st.write('')
-
+    
     # map
     st.markdown(f'### Observations\' map between {year_filter[0]} ' \
                    +f'and {year_filter[1]}')
@@ -734,9 +769,12 @@ else:
     st.write('')
     plot_annual_centroids(filter_df)
     st.write('')
-    plot_interv_long_lati_regression(filter_df, year_filter)
-    st.write('')
-    plot_manova(filter_df, year_filter)
-    st.write('')
-    permanova_test(filter_df, year_filter)
-    st.write('')
+    if year_filter[0] != year_filter[1]:
+        plot_interv_long_lati_regression(filter_df, year_filter)
+        st.write('')
+        plot_manova(filter_df, year_filter)
+        st.write('')
+        permanova_test(filter_df, year_filter)
+        st.write('')
+    else:
+        st.info('For more statistics, please select multiple years.')
