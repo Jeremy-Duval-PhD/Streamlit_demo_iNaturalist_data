@@ -153,10 +153,13 @@ def plot_pydeck_map(centroids, container):
         auto_highlight=True,
     )
     
+    mean_lat = (min(centroids['latitude']) + max(centroids['latitude']))/2
+    mean_lon = (min(centroids['longitude']) + max(centroids['longitude']))/2
+    
     # Set the viewport
     view_state = pdk.ViewState(
-        latitude=46.75,
-        longitude=2,
+        latitude=mean_lat,
+        longitude=mean_lon,
         zoom=5,
         pitch=0,
     )
@@ -369,7 +372,7 @@ def levene_test(df, variables, container, step=None):
     if len(invalid_var) == 0 :
         msg += 'All group variances are similar.'
     else:
-        msg += 'Variances are differents for variable(s) '
+        msg += 'Variances are differents for variable(s). See PERMANOVA test. '
         for var in invalid_var:
             msg += f'{var}, '
         msg = msg[:-2] + '.'
