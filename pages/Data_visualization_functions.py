@@ -19,14 +19,21 @@ from sklearn.preprocessing import PowerTransformer
 from skbio.stats.distance import DistanceMatrix, permanova
 
 
-def __get_1st_cat(df, col):
-    return df[col].value_counts(sort='asc').index[0]
+def _get_1st_cat(df, col):
+    if df.empty:
+        return None
+    else:
+        return df[col].value_counts(sort='asc').index[0]
+    
+    
+def get_pie_lbl(vc):
+    return [str(x) + '(' + str(int(round(y*100,0))) + '%)' for x, y in zip(vc.index, vc.values)]
 
 
 def set_title(df):
-    cm_name = __get_1st_cat(df, 'common_name')
-    sc_name = __get_1st_cat(df, 'scientific_name')
-    taxon = __get_1st_cat(df, 'iconic_taxon_name')
+    cm_name = _get_1st_cat(df, 'common_name')
+    sc_name = _get_1st_cat(df, 'scientific_name')
+    taxon = _get_1st_cat(df, 'iconic_taxon_name')
     
     st.title(cm_name.capitalize())
     st.header(sc_name.capitalize())
@@ -45,10 +52,6 @@ def dialog_important_info():
                 alone. It remains generic and is influenced by the observers 
                 themselves.
                 ''')
-    
-    
-def get_pie_lbl(vc):
-    return [str(x) + '(' + str(int(round(y*100,0))) + '%)' for x, y in zip(vc.index, vc.values)]
 
 
 @st.fragment
@@ -383,7 +386,7 @@ def levene_test(df, variables, container, step=None):
     
     
     
-def test_normality(data, group_col, variables):
+def get_test_normality_data(data, group_col, variables):
     results = []
     grouped = data.groupby(group_col)
     for name, group in grouped:
@@ -396,7 +399,7 @@ def test_normality(data, group_col, variables):
 
 
 def normality_test(df, variables, container, step=None):
-    normality_df = test_normality(df, "year", variables)
+    normality_df = get_test_normality_data(df, "year", variables)
     pval_cols = [f"p-value {v}" for v in variables]
     non_normal_years = normality_df[normality_df[pval_cols].lt(0.05).any(axis=1)]
     
