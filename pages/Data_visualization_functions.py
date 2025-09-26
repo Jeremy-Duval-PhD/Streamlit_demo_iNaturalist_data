@@ -372,6 +372,7 @@ def levene_test(df, variables, container, step=None):
         
         '''
         
+    have_failed = False
     if len(invalid_var) == 0 :
         msg += 'All group variances are similar.'
     else:
@@ -379,10 +380,12 @@ def levene_test(df, variables, container, step=None):
         for var in invalid_var:
             msg += f'{var}, '
         msg = msg[:-2] + '.'
+        have_failed = True
         
         
     container.write(msg)
     container.write(levene_df)
+    return have_failed
     
     
     
@@ -527,7 +530,7 @@ def manova_test(filter_df):
     expander.write('If step 1 or 4 fail, please, see the PERMANOVA test.')
     
     # Test of variance equality between group
-    levene_test(filter_df, variables, expander, step=1)
+    have_failed = levene_test(filter_df, variables, expander, step=1)
     
     # Normality test (normality required for MANOVA)
     need_normalization, normality_df =  normality_test(filter_df, variables, \
@@ -545,6 +548,9 @@ def manova_test(filter_df):
                     Normality validated.
                     ''')
         df_for_manova = filter_df
+    
+    if have_failed or need_normalization:
+        st.warning("⚠️ The MANOVA hypotheses are not validated. Please see the PERMANOVA test.")
     
     mtv = MANOVA.from_formula('latitude + longitude ~ year', data=df_for_manova)
     res = mtv.mv_test()
