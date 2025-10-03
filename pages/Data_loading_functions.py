@@ -34,7 +34,7 @@ def init_all_session_state_var(raw_df, df, file_name):
     
     
 def get_data():
-    uploaded_file = st.file_uploader("Upload your iNaturalist data", type=['csv'])
+    uploaded_file = st.file_uploader("Upload your iNaturalist data in CSV format", type=['csv'])
     if uploaded_file is not None:
         raw_df = upload_file_to_df(uploaded_file)
         file_name = uploaded_file.name
