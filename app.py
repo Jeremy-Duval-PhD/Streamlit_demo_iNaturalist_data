@@ -3,7 +3,7 @@ import streamlit as st
 st.logo('assets/logo.png', size='large', link='https://github.com/Jeremy-Duval-PhD')
 
 st.set_page_config(
-    page_title="Hello",
+    page_title="iNaturalist Data Explorer",
     page_icon='assets/logo.png',
 )
 
