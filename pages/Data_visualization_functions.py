@@ -219,9 +219,9 @@ def plot_first_and_filters(df):
     col1_1.pyplot(nb_obs_year_fig)
     
     col0_2.markdown('### Quality grade proportion')
-    qg_pie_fig = plt.figure()
     vc = df['quality_grade'].value_counts(normalize=True)
-    vc.plot.pie(labels=get_pie_lbl(vc))
+    qg_pie_fig = plt.figure()
+    vc.plot.pie(labels=get_pie_lbl(vc), ylabel='')
     col1_2.pyplot(qg_pie_fig)
     
     #filters part
