@@ -23,3 +23,7 @@ On iNaturalist, people can record their own observations, discuss them, and rece
 It should be noted that this is a non-profit organization.
 
 [iNaturalist website](https://www.inaturalist.org/)
+
+
+## App presentation video (in French)
+[Link](https://drive.google.com/file/d/1SVrkAIEj-IGNwkQq2zgRfSlTouHE41pG/view?usp=drive_link)
