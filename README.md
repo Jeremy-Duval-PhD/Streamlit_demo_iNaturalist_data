@@ -27,3 +27,7 @@ It should be noted that this is a non-profit organization.
 
 ## App presentation video (in French)
 [Link](https://drive.google.com/file/d/1SVrkAIEj-IGNwkQq2zgRfSlTouHE41pG/view?usp=drive_link)
+
+## Docker image
+If you would like to deploy the app to a different location within the Streamlit hub, you can download and run the following Docker container :
+[Link](https://hub.docker.com/repository/docker/jduvalphd/inaturalist_data_explorer/general)
