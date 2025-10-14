@@ -1,25 +1,7 @@
 import streamlit as st
 import pandas as pd
-from pyinaturalist import get_observations, get_taxa
+from pyinaturalist import get_observations
 from pyinaturalist.node_api import get_places_autocomplete
-import requests
-
-COUNTRIES = [
-    ("Afghanistan", "AF"), ("Albania", "AL"), ("Algeria", "DZ"), ("Andorra", "AD"), ("Angola", "AO"),
-    ("Argentina", "AR"), ("Armenia", "AM"), ("Australia", "AU"), ("Austria", "AT"), ("Belgium", "BE"),
-    ("Brazil", "BR"), ("Bulgaria", "BG"), ("Cameroon", "CM"), ("Canada", "CA"), ("Chile", "CL"),
-    ("China", "CN"), ("Colombia", "CO"), ("Croatia", "HR"), ("Czech Republic", "CZ"), ("Denmark", "DK"),
-    ("Egypt", "EG"), ("Estonia", "EE"), ("Finland", "FI"), ("France", "FR"), ("Germany", "DE"),
-    ("Greece", "GR"), ("Hungary", "HU"), ("Iceland", "IS"), ("India", "IN"), ("Indonesia", "ID"),
-    ("Ireland", "IE"), ("Israel", "IL"), ("Italy", "IT"), ("Japan", "JP"), ("Kenya", "KE"),
-    ("Latvia", "LV"), ("Lithuania", "LT"), ("Luxembourg", "LU"), ("Madagascar", "MG"), ("Malaysia", "MY"),
-    ("Mexico", "MX"), ("Morocco", "MA"), ("Netherlands", "NL"), ("New Zealand", "NZ"), ("Nigeria", "NG"),
-    ("Norway", "NO"), ("Peru", "PE"), ("Philippines", "PH"), ("Poland", "PL"), ("Portugal", "PT"),
-    ("Romania", "RO"), ("Russia", "RU"), ("Saudi Arabia", "SA"), ("Senegal", "SN"), ("Serbia", "RS"),
-    ("Singapore", "SG"), ("Slovakia", "SK"), ("Slovenia", "SI"), ("South Africa", "ZA"), ("South Korea", "KR"),
-    ("Spain", "ES"), ("Sweden", "SE"), ("Switzerland", "CH"), ("Thailand", "TH"), ("Tunisia", "TN"),
-    ("Turkey", "TR"), ("Ukraine", "UA"), ("United Kingdom", "GB"), ("United States", "US"), ("Vietnam", "VN")
-]
 
 @st.cache_data
 def upload_file_to_df(uploaded_file):
@@ -205,40 +187,46 @@ def on_form_submit():
             init_all_session_state_var(raw_df, df, species_name)
 
 
-@st.cache_data
-def get_place_id_for_country(country_name: str):
-    """Récupère le place_id iNaturalist d'un pays via son nom."""
-    try:
-        url = f"https://api.inaturalist.org/v1/places/autocomplete?q={country_name}"
-        resp = requests.get(url, timeout=5)
-        resp.raise_for_status()
-        results = resp.json().get("results", [])
-        for place in results:
-            if place.get("type") == "Country":
-                return place.get("id")
-    except Exception as e:
-        st.error(f"Erreur API iNaturalist pour le pays '{country_name}': {e}")
-    return None
-
 @st.fragment
 def get_data_from_api():
     st.subheader("From iNaturalist website")
     
-    species_name = st.text_input("Species:", "Filipendula ulmaria")
-    st.session_state["species_name"] = species_name
+    with st.form("inat_form"):
+        # Champ texte pour l'espèce
+        species_name = st.text_input("Species:", "Filipendula ulmaria")
+        st.session_state["species_name"] = species_name
 
-    # Champ texte pour taper le nom du pays
-    st.markdown("#### Geographical filter")
+        # Champ texte pour le lieu/pays
+        place_query = st.text_input(
+            "Enter a place or country name:",
+            key="place_query",
+            help="You can type any place name. The best match from iNaturalist will be selected."
+        )
 
-    # Liste déroulante de pays (selectbox)
-    country_list = ["-- Aucun --", "France", "Germany", "United States", "Canada", "Italy", "Spain"]
-    selected_country = st.selectbox("Sélectionner un pays :", country_list)
-    if selected_country != "-- Aucun --":
-        st.session_state["place_id"] = get_place_id_for_country(selected_country)
-    else:
-        st.session_state["place_id"] = None
+        # Place ID par défaut None
+        place_id = None
 
-    st.button("🔍 Search", on_click=on_form_submit)
+        # Recherche du meilleur match sur iNaturalist (mais seulement à la soumission)
+        if place_query and len(place_query.strip()) >= 2:
+            try:
+                response = get_places_autocomplete(q=place_query.strip())
+                results = response.get("results", [])
+                
+                if results:
+                    best_match = results[0]
+                    place_id = best_match.get("id")
+                    st.session_state["place_id"] = place_id
+                    st.markdown(f"Selected country: **{best_match['name']}**")
+                else:
+                    st.warning("No matching place found on iNaturalist.")
+                    st.session_state["place_id"] = None
+            except Exception as e:
+                st.error(f"Erreur API iNaturalist : {e}")
+                st.session_state["place_id"] = None
+        else:
+            st.session_state["place_id"] = None
+
+        st.form_submit_button("🔍 Search", on_click=on_form_submit)
         
         
         
