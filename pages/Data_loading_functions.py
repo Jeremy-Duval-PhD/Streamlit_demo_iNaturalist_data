@@ -28,8 +28,8 @@ def init_all_session_state_var(raw_df, df, file_name):
     st.session_state['raw_data'] = raw_df
     st.session_state['data'] = df
     # get min and max years and generate a range to avoid missing years
-    min_year = min(list(df.index.year))
-    max_year = max(list(df.index.year))
+    min_year = int(min(list(df.index.year)))
+    max_year = int(max(list(df.index.year)))
     st.session_state['years'] = list(range(min_year, max_year+1,1))
     
     
