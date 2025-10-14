@@ -2,6 +2,24 @@ import streamlit as st
 import pandas as pd
 from pyinaturalist import get_observations, get_taxa
 from pyinaturalist.node_api import get_places_autocomplete
+import requests
+
+COUNTRIES = [
+    ("Afghanistan", "AF"), ("Albania", "AL"), ("Algeria", "DZ"), ("Andorra", "AD"), ("Angola", "AO"),
+    ("Argentina", "AR"), ("Armenia", "AM"), ("Australia", "AU"), ("Austria", "AT"), ("Belgium", "BE"),
+    ("Brazil", "BR"), ("Bulgaria", "BG"), ("Cameroon", "CM"), ("Canada", "CA"), ("Chile", "CL"),
+    ("China", "CN"), ("Colombia", "CO"), ("Croatia", "HR"), ("Czech Republic", "CZ"), ("Denmark", "DK"),
+    ("Egypt", "EG"), ("Estonia", "EE"), ("Finland", "FI"), ("France", "FR"), ("Germany", "DE"),
+    ("Greece", "GR"), ("Hungary", "HU"), ("Iceland", "IS"), ("India", "IN"), ("Indonesia", "ID"),
+    ("Ireland", "IE"), ("Israel", "IL"), ("Italy", "IT"), ("Japan", "JP"), ("Kenya", "KE"),
+    ("Latvia", "LV"), ("Lithuania", "LT"), ("Luxembourg", "LU"), ("Madagascar", "MG"), ("Malaysia", "MY"),
+    ("Mexico", "MX"), ("Morocco", "MA"), ("Netherlands", "NL"), ("New Zealand", "NZ"), ("Nigeria", "NG"),
+    ("Norway", "NO"), ("Peru", "PE"), ("Philippines", "PH"), ("Poland", "PL"), ("Portugal", "PT"),
+    ("Romania", "RO"), ("Russia", "RU"), ("Saudi Arabia", "SA"), ("Senegal", "SN"), ("Serbia", "RS"),
+    ("Singapore", "SG"), ("Slovakia", "SK"), ("Slovenia", "SI"), ("South Africa", "ZA"), ("South Korea", "KR"),
+    ("Spain", "ES"), ("Sweden", "SE"), ("Switzerland", "CH"), ("Thailand", "TH"), ("Tunisia", "TN"),
+    ("Turkey", "TR"), ("Ukraine", "UA"), ("United Kingdom", "GB"), ("United States", "US"), ("Vietnam", "VN")
+]
 
 @st.cache_data
 def upload_file_to_df(uploaded_file):
@@ -159,26 +177,6 @@ def format_observations_for_export(df_raw):
     return df
 
 
-@st.cache_data(ttl=300)
-def get_country_suggestions_cached(query: str):
-    """Retourne la liste d'objets place (dict) correspondant au query (type Country)."""
-    if not query or len(query) < 2:
-        return []
-    resp = get_places_autocomplete(q=query)
-    return [p for p in resp.get("results", []) if p.get("type") == "Country"]
-
-@st.cache_data(ttl=3600)
-def get_place_id_by_name_cached(name: str):
-    """Retourne le place_id pour un nom de lieu exact (type Country)."""
-    if not name:
-        return None
-    resp = get_places_autocomplete(q=name)
-    for p in resp.get("results", []):
-        if p.get("type") == "Country" and p.get("name") == name:
-            return p.get("id")
-    return None
-
-
 def on_form_submit():
     species_name = st.session_state["species_name"]
     place_id = st.session_state.get("place_id")
@@ -207,38 +205,40 @@ def on_form_submit():
             init_all_session_state_var(raw_df, df, species_name)
 
 
+@st.cache_data
+def get_place_id_for_country(country_name: str):
+    """Récupère le place_id iNaturalist d'un pays via son nom."""
+    try:
+        url = f"https://api.inaturalist.org/v1/places/autocomplete?q={country_name}"
+        resp = requests.get(url, timeout=5)
+        resp.raise_for_status()
+        results = resp.json().get("results", [])
+        for place in results:
+            if place.get("type") == "Country":
+                return place.get("id")
+    except Exception as e:
+        st.error(f"Erreur API iNaturalist pour le pays '{country_name}': {e}")
+    return None
+
+@st.fragment
 def get_data_from_api():
-    with st.form("inat_form", clear_on_submit=False):
-        st.subheader("From iNaturalist website")
-        
-        species_name = st.text_input("Species:", "Filipendula ulmaria")
-        st.session_state["species_name"] = species_name
+    st.subheader("From iNaturalist website")
     
-        st.markdown("#### Geographical filter")
-        
-        # Champ texte pour taper le nom du pays
-        st.text_input("Tapez le nom du pays (≥2 lettres) :", key="country_query",
-                      help="Ex : France, Germany, United States")
+    species_name = st.text_input("Species:", "Filipendula ulmaria")
+    st.session_state["species_name"] = species_name
 
-        # Récupérer suggestions (cache) à partir du texte saisi
-        query = st.session_state.get("country_query", "")
-        suggestions = get_country_suggestions_cached(query)
+    # Champ texte pour taper le nom du pays
+    st.markdown("#### Geographical filter")
 
-        # Construire la liste d'affichage (nom) pour le selectbox
-        suggestion_names = ["-- Aucun --"] + [p["name"] for p in suggestions]
+    # Liste déroulante de pays (selectbox)
+    country_list = ["-- Aucun --", "France", "Germany", "United States", "Canada", "Italy", "Spain"]
+    selected_country = st.selectbox("Sélectionner un pays :", country_list)
+    if selected_country != "-- Aucun --":
+        st.session_state["place_id"] = get_place_id_for_country(selected_country)
+    else:
+        st.session_state["place_id"] = None
 
-        # selectbox affiche les suggestions
-        selected_name = st.selectbox("Suggestions :", suggestion_names, key="selected_country")
-
-        # Si l'utilisateur sélectionne un nom (pas '-- Aucun --'), récupérer place_id (cache)
-        if selected_name and selected_name != "-- Aucun --":
-            place_id = get_place_id_by_name_cached(selected_name)
-            st.session_state["place_id"] = place_id
-            st.markdown(f"Place selected: **{selected_name}** (place_id: {place_id})")
-        else:
-            st.session_state["place_id"] = None
-    
-        st.form_submit_button("🔍 Search", on_click=on_form_submit)
+    st.button("🔍 Search", on_click=on_form_submit)
         
         
         
