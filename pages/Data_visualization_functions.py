@@ -229,18 +229,24 @@ def plot_first_and_filters(df):
     
     min_year = st.session_state['years'][0]
     max_year = st.session_state['years'][-1]
-    year_filter = col1_3.slider('Filter years', \
-                              min_year, \
-                              max_year, \
-                              (min_year,max_year))
+    
+    
+    if min_year != max_year:
+        year_filter = col1_3.slider('Filter years', \
+                                  min_year, \
+                                  max_year, \
+                                  (min_year,max_year))
+    else:
+        year_filter = (min_year, max_year)
+        
+    filter_df = df.loc[(df.index >= f'{year_filter[0]}-01-01')
+                      &(df.index <= f'{year_filter[1]}-12-31')]
+        
     quality_grade_filter = col1_3.segmented_control(
         'Observation quality', 
         ['research','all'], \
         selection_mode='single',\
         default='all')
-        
-    filter_df = df.loc[(df.index >= f'{year_filter[0]}-01-01')
-                      &(df.index <= f'{year_filter[1]}-12-31')]
     if quality_grade_filter != 'all':
         filter_df = filter_df[filter_df['quality_grade'] == quality_grade_filter]
 
