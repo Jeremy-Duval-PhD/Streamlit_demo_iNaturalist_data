@@ -2,6 +2,9 @@ import streamlit as st
 import pandas as pd
 from pyinaturalist import get_observations
 from pyinaturalist.node_api import get_places_autocomplete
+import time
+import random
+
 
 @st.cache_data
 def upload_file_to_df(uploaded_file):
@@ -18,7 +21,6 @@ def get_clean_columns_order():
 @st.cache_data
 def clean_df(df):
     df = df.drop_duplicates()
-    st.write(str(list(df.columns)))
     col_to_keep = get_clean_columns_order()
     df = df[col_to_keep]
     df = df.dropna(subset=['latitude', 'longitude'])
@@ -50,8 +52,27 @@ def get_session_state_data():
     return raw_df, df, data_name
     
     
-def get_uploaded_data():
-    uploaded_file = st.file_uploader("Upload your iNaturalist data in CSV format", type=['csv'])
+def get_uploaded_data(section):
+    cntr = section.container(border=True)
+    
+    help_msg = '''
+                 You can export (at csv format) the result of your iNaturalist search 
+                 ([link](https://www.inaturalist.org/observations/export)).  
+                 Keep the default columns selection, or at least the following columns:
+                * url
+                * image_url
+                * time_zone
+                * quality_grade
+                * latitude
+                * longitude
+                * public_positional_accuracy
+                * scientific_name
+                * common_name
+                * iconic_taxon_name
+              '''
+    uploaded_file = cntr.file_uploader("Upload your iNaturalist data in CSV format", 
+                                       type=['csv'],
+                                       help=help_msg)
     if uploaded_file is not None:
         raw_df = upload_file_to_df(uploaded_file)
         file_name = uploaded_file.name
@@ -62,6 +83,10 @@ def get_uploaded_data():
 
 
 def df_col_to_date(df):
+    """
+    Convert all date columns to pandas datetime without timezone awareness
+    (tz-naive), to avoid mix errors between tz-aware and tz-naive values.
+    """
     date_cols = [
         'observed_on', 'observed_on_string', 'time_observed_at',
         'created_at', 'updated_at'
@@ -69,15 +94,23 @@ def df_col_to_date(df):
     
     for col in date_cols:
         if col in df.columns:
-            df[col] = pd.to_datetime(df[col], errors='coerce')
-            
+            try:
+                # Convert to datetime with errors='coerce'
+                df[col] = pd.to_datetime(df[col], errors='coerce', utc=True)
+                # Then remove timezone info to make it tz-naive
+                df[col] = df[col].dt.tz_localize(None)
+            except Exception as e:
+                st.warning(f"⚠️ Failed to parse dates in column '{col}': {e}")
+                df[col] = pd.NaT
+                
     return df
+
 
 
 def extract_coordinates(df_raw):
     """
-    Crée les colonnes latitude et longitude à partir de geojson.coordinates ou location.
-    Priorité à geojson. Si aucune coordonnée disponible, retourne None.
+    Creates the latitude and longitude columns from geojson.coordinates or location.
+    Priority given to geojson. If no coordinates are available, returns None.
     """
     def get_lat(row):
         geo = row.get('geojson')
@@ -115,7 +148,7 @@ def format_observations_for_export(df_raw):
     df_raw = extract_coordinates(df_raw)
     df = pd.DataFrame()
 
-    # Colonnes simples
+    # Columns from csv downloaded
     simple_cols = [
         'id', 'uuid', 'observed_on_string', 'observed_on', 'time_zone',
         'created_at', 'updated_at', 'quality_grade', 'license_code', 
@@ -127,106 +160,166 @@ def format_observations_for_export(df_raw):
     for col in simple_cols:
         df[col] = df_raw[col] if col in df_raw.columns else None
 
-    # Colonnes dérivées de taxon (aplaties par json_normalize)
-    df['scientific_name'] = df_raw['taxon.name'] if 'taxon.name' in df_raw.columns else None
-    df['common_name'] = df_raw['taxon.preferred_common_name'] if 'taxon.preferred_common_name' in df_raw.columns else None
-    df['iconic_taxon_name'] = df_raw['taxon.iconic_taxon_name'] if 'taxon.iconic_taxon_name' in df_raw.columns else None
-    df['taxon_id'] = df_raw['taxon.id'] if 'taxon.id' in df_raw.columns else None
+    # Columns from taxon (flat by json_normalize)
+    df['scientific_name'] = df_raw.get('taxon.name')
+    df['common_name'] = df_raw.get('taxon.preferred_common_name')
+    df['iconic_taxon_name'] = df_raw.get('taxon.iconic_taxon_name')
+    df['taxon_id'] = df_raw.get('taxon.id')
 
-    # Colonnes média
+    # Media columns
     df['image_url'] = df_raw['photos'].apply(
-        lambda photos: photos[0]['url'] if isinstance(photos, list) and len(photos) > 0 else None
+        lambda photos: photos[0]['url'] if isinstance(photos, list) and len(photos) > 0 and isinstance(photos[0], dict) else None
     ) if 'photos' in df_raw.columns else None
 
     df['sound_url'] = df_raw['sounds'].apply(
-        lambda sounds: sounds[0]['file_url'] if isinstance(sounds, list) and len(sounds) > 0 else None
+        lambda sounds: sounds[0]['file_url'] if isinstance(sounds, list) and len(sounds) > 0 and isinstance(sounds[0], dict) else None
     ) if 'sounds' in df_raw.columns else None
 
-    # Colonnes texte / tags
-    df['tag_list'] = df_raw['tags'].apply(
-        lambda tags: ','.join([t['name'] for t in tags]) if isinstance(tags, list) else ''
-    ) if 'tags' in df_raw.columns else ''
+    # 🩹 FIX : handle 'tags' variations safely
+    def safe_tags_extraction(tags):
+        if isinstance(tags, list):
+            if all(isinstance(t, dict) and 'name' in t for t in tags):
+                return ','.join(t['name'] for t in tags)
+            elif all(isinstance(t, str) for t in tags):
+                return ','.join(tags)
+        elif isinstance(tags, str):
+            return tags
+        return ''
 
-    # Colonnes user
-    df['user.login'] = df_raw['user.login'] if 'user.login' in df_raw.columns else None
+    df['tag_list'] = df_raw['tags'].apply(safe_tags_extraction) if 'tags' in df_raw.columns else ''
 
-    # Colonnes supplémentaires manquantes dans API brute
-    df['url'] = None
+    # User columns
+    df['user.login'] = df_raw.get('user.login')
 
+    # Link to the observation
+    if 'uri' in df_raw.columns:
+        df['url'] = df_raw['uri']
+    else:
+        df['url'] = df_raw['id'].apply(
+            lambda x: f"https://www.inaturalist.org/observations/{x}" if pd.notna(x) else None
+        )
+
+    # Change df for a Date df
     df = df_col_to_date(df)
-    df.set_index('observed_on', inplace=True)
+    if 'observed_on' in df.columns:
+        df.set_index('observed_on', inplace=True, drop=True)
 
     return df
+
 
 
 def on_form_submit():
     species_name = st.session_state["species_name"]
     place_id = st.session_state.get("place_id")
+    order_param = st.session_state.get("order_param")
+    max_results = st.session_state.get("max_results")
     
     geo_args = {}
     if place_id:
         geo_args["place_id"] = place_id
     
-    with st.spinner("Please wait..."):
-        # call to iNaturalist API
-        st.write("geo_args:", geo_args)
-        response = get_observations(taxon_name=species_name, **geo_args, per_page=100)
-        results = response.get("results", [])
-        st.write("results:", bool(results))
-        if not results:
+    with st.spinner("Fetching observations..."):
+        all_results = []
+        page = 1
+        per_page = 200
+        total_fetched = 0
+        progress = st.progress(0, text="Fetching data from iNaturalist...")
+
+        while total_fetched < max_results:
+            response = get_observations(
+                taxon_name=species_name,
+                order_by="observed_on",
+                order=order_param,
+                **geo_args,
+                per_page=per_page,
+                page=page
+            )
+            results = response.get("results", [])
+            if not results:
+                break
+
+            all_results.extend(results)
+            total_fetched += len(results)
+            page += 1
+
+            progress.progress(min(total_fetched / max_results, 1.0),
+                              text=f"Downloaded {total_fetched} / {max_results} observations")
+
+        if not all_results:
             st.warning('No observations found.')
         else:
-            st.success('The request succeeded.')
+            st.success(f'✅ Retrieved {len(all_results):,} observations successfully.')
             
-            #raw_df = pd.DataFrame(results)
-            raw_df = format_observations_for_export(\
-                                        pd.json_normalize(response['results']))
-            
+            raw_df = format_observations_for_export(pd.json_normalize(all_results))
             df = clean_df(raw_df)
-            st.write(df)
             init_all_session_state_var(raw_df, df, species_name)
 
 
-@st.fragment
-def get_data_from_api():
-    st.subheader("From iNaturalist website")
+
+def get_data_from_api(section):
+    inat_form = section.form("inat_form")
     
-    with st.form("inat_form"):
-        # Champ texte pour l'espèce
-        species_name = st.text_input("Species:", "Filipendula ulmaria")
-        st.session_state["species_name"] = species_name
+    # Species field
+    species_name = inat_form.text_input("Species:", placeholder="ex: Filipendula ulmaria")
+    st.session_state["species_name"] = species_name
 
-        # Champ texte pour le lieu/pays
-        place_query = st.text_input(
-            "Enter a place or country name:",
-            key="place_query",
-            help="You can type any place name. The best match from iNaturalist will be selected."
-        )
+    # Place field
+    help_msg = '''You can type any place name.
+                  The best match from iNaturalist will be selected.  
+                  Leave it blank to search worldwide.'''
+    
+    place_query = inat_form.text_input(
+        "Enter a place or country name:",
+        key="place_query",
+        help=help_msg
+    )
 
-        # Place ID par défaut None
-        place_id = None
+    # Place ID, default = None
+    place_id = None
 
-        # Recherche du meilleur match sur iNaturalist (mais seulement à la soumission)
-        if place_query and len(place_query.strip()) >= 2:
-            try:
-                response = get_places_autocomplete(q=place_query.strip())
-                results = response.get("results", [])
-                
-                if results:
-                    best_match = results[0]
-                    place_id = best_match.get("id")
-                    st.session_state["place_id"] = place_id
-                    st.markdown(f"Selected country: **{best_match['name']}**")
-                else:
-                    st.warning("No matching place found on iNaturalist.")
-                    st.session_state["place_id"] = None
-            except Exception as e:
-                st.error(f"Erreur API iNaturalist : {e}")
+    # Recherche du meilleur match sur iNaturalist (mais seulement à la soumission)
+    if place_query and len(place_query.strip()) >= 2:
+        try:
+            response = get_places_autocomplete(q=place_query.strip())
+            results = response.get("results", [])
+            
+            if results:
+                best_match = results[0]
+                place_id = best_match.get("id")
+                st.session_state["place_id"] = place_id
+                inat_form.markdown(f"Selected country: **{best_match['name']}**")
+            else:
+                inat_form.warning("No matching place found on iNaturalist.")
                 st.session_state["place_id"] = None
-        else:
+        except Exception as e:
+            inat_form.error(f"Erreur API iNaturalist : {e}")
             st.session_state["place_id"] = None
+    else:
+        st.session_state["place_id"] = None
+        
+    # Order selection
+    order_choice = inat_form.radio(
+        "Order of observations:",
+        options=["Newest first", "Oldest first"],
+        horizontal=True,
+        help="Choose how to sort the observations by observation date."
+    )
+    
+    order_param = "desc" if order_choice == "Newest first" else "asc"
+    st.session_state["order_param"] = order_param
 
-        st.form_submit_button("🔍 Search", on_click=on_form_submit)
+    # Limit number of results
+    max_results = inat_form.number_input(
+        "Maximum number of observations to download",
+        min_value=1000,
+        max_value=100000,
+        value=10000,
+        step=1000,
+        help="⚠️ Large downloads (>50,000) can take several minutes and use a lot of memory."
+    )
+    st.session_state["max_results"] = max_results
+
+    inat_form.form_submit_button("🔍 Search", on_click=on_form_submit)
         
         
         
