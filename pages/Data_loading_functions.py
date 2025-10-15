@@ -210,9 +210,11 @@ def format_observations_for_export(df_raw):
 
 def on_form_submit():
     species_name = st.session_state["species_name"]
-    place_id = st.session_state.get("place_id")
-    order_param = st.session_state.get("order_param")
-    max_results = st.session_state.get("max_results")
+    place_id = st.session_state["place_id"]
+    order_param = st.session_state["order_param"]
+    max_results = st.session_state["max_results"]
+    
+    st.write(f'{species_name}, {place_id}, {max_results}, {order_param}')
     
     geo_args = {}
     if place_id:
@@ -225,7 +227,10 @@ def on_form_submit():
         total_fetched = 0
         progress = st.progress(0, text="Fetching data from iNaturalist...")
 
+        start_time = time.time()
+        
         while total_fetched < max_results:
+            # --- API call ---
             response = get_observations(
                 taxon_name=species_name,
                 order_by="observed_on",
@@ -238,12 +243,26 @@ def on_form_submit():
             if not results:
                 break
 
+            # --- Store results ---
             all_results.extend(results)
             total_fetched += len(results)
             page += 1
 
-            progress.progress(min(total_fetched / max_results, 1.0),
-                              text=f"Downloaded {total_fetched} / {max_results} observations")
+            # --- Update progress bar ---
+            elapsed = time.time() - start_time
+            est_total = (elapsed / total_fetched) * max_results if total_fetched else 0
+            eta = est_total - elapsed
+            eta_min = int(eta // 60)
+            eta_sec = int(eta % 60)
+            
+            progress.progress(
+                min(total_fetched / max_results, 1.0),
+                text=f"Downloaded {total_fetched:,} / {max_results:,} observations "
+                     f"(remaining time: {eta_min}m {eta_sec}s)"
+            )
+
+            # --- Gentle delay (to avoid rate-limiting) ---
+            time.sleep(random.uniform(0.3, 0.7))  # between 300 and 700ms per call
 
         if not all_results:
             st.warning('No observations found.')
@@ -315,11 +334,13 @@ def get_data_from_api(section):
         max_value=100000,
         value=10000,
         step=1000,
-        help="⚠️ Large downloads (>50,000) can take several minutes and use a lot of memory."
+        help="⚠️ Large downloads (>50,000) can take several minutes and use a lot of memory.",
     )
     st.session_state["max_results"] = max_results
 
-    inat_form.form_submit_button("🔍 Search", on_click=on_form_submit)
+    submit = inat_form.form_submit_button("🔍 Search")
+    if submit:
+        on_form_submit()
         
         
         
