@@ -85,21 +85,20 @@ def get_uploaded_data(section):
 
 def df_col_to_date(df):
     """
-    Convert all date columns to pandas datetime without timezone awareness
-    (tz-naive), to avoid mix errors between tz-aware and tz-naive values.
+    Convert all date columns to pandas datetime (tz-naive), 
+    ignoring columns that should not be parsed.
     """
     date_cols = [
-        'observed_on', 'observed_on_string', 'time_observed_at',
+        'observed_on', 'time_observed_at',
         'created_at', 'updated_at'
     ]
     
     for col in date_cols:
         if col in df.columns:
             try:
-                # Convert to datetime with errors='coerce'
                 df[col] = pd.to_datetime(df[col], errors='coerce', utc=True)
-                # Then remove timezone info to make it tz-naive
-                df[col] = df[col].dt.tz_localize(None)
+                if pd.api.types.is_datetime64tz_dtype(df[col]):
+                    df[col] = df[col].dt.tz_convert(None)
             except Exception as e:
                 st.warning(f"⚠️ Failed to parse dates in column '{col}': {e}")
                 df[col] = pd.NaT
