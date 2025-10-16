@@ -24,8 +24,9 @@ def clean_df(df):
     col_to_keep = get_clean_columns_order()
     df = df[col_to_keep]
     df = df.dropna(subset=['latitude', 'longitude'])
+    df = df[df.index.notna()]
     
-    df['year'] = df.index.year
+    df['year'] = df.index.year.astype(int)
     
     return df
 
@@ -214,8 +215,6 @@ def on_form_submit():
     order_param = st.session_state["order_param"]
     max_results = st.session_state["max_results"]
     
-    st.write(f'{species_name}, {place_id}, {max_results}, {order_param}')
-    
     geo_args = {}
     if place_id:
         geo_args["place_id"] = place_id
@@ -241,6 +240,11 @@ def on_form_submit():
             )
             results = response.get("results", [])
             if not results:
+                progress.progress(
+                    1.0,
+                    text=f"Downloaded {total_fetched:,} / {max_results:,} observations "
+                         f"(remaining time: 0m 0s) → no additional observations availables"
+                )
                 break
 
             # --- Store results ---
@@ -279,7 +283,12 @@ def get_data_from_api(section):
     inat_form = section.form("inat_form")
     
     # Species field
-    species_name = inat_form.text_input("Species:", placeholder="ex: Filipendula ulmaria")
+    help_msg = '''You can use common or scientific names.'''
+    species_name = inat_form.text_input(
+        "Species:", 
+        placeholder="ex: Filipendula ulmaria",
+        help=help_msg
+        )
     st.session_state["species_name"] = species_name
 
     # Place field
@@ -311,7 +320,7 @@ def get_data_from_api(section):
                 inat_form.warning("No matching place found on iNaturalist.")
                 st.session_state["place_id"] = None
         except Exception as e:
-            inat_form.error(f"Erreur API iNaturalist : {e}")
+            inat_form.error(f"Error from iNaturalist API : {e}")
             st.session_state["place_id"] = None
     else:
         st.session_state["place_id"] = None

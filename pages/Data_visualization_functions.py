@@ -2,6 +2,7 @@ import streamlit as st
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
+from matplotlib.ticker import FormatStrFormatter
 import seaborn as sns
 import pydeck as pdk
 from itertools import combinations
@@ -31,13 +32,11 @@ def get_pie_lbl(vc):
 
 
 def set_title(df):
-    cm_name = _get_1st_cat(df, 'common_name')
     sc_name = _get_1st_cat(df, 'scientific_name')
     taxon = _get_1st_cat(df, 'iconic_taxon_name')
     
-    st.title(cm_name.capitalize())
-    st.header(sc_name.capitalize())
-    st.subheader(taxon.capitalize())
+    st.title(sc_name.capitalize())
+    st.header(taxon.capitalize())
     st.write('')
     
     
@@ -212,10 +211,12 @@ def plot_first_and_filters(df):
     col0_1, col0_2, col0_3 = st.columns([1,1,1], vertical_alignment='top')
     col1_1, col1_2, col1_3 = st.columns([1,1,1], vertical_alignment='center')
     col0_1.markdown('### Number of observation per year')
-    nb_obs_year_fig = plt.figure()
+    nb_obs_year_fig, ax = plt.subplots()
     noy = df['latitude'].resample('YE').count()
-    noy.index = noy.index.year
-    noy.plot()
+    noy.index = noy.index.year.astype(int)
+    noy.plot(ax=ax)
+    ax.xaxis.set_major_formatter(FormatStrFormatter("%d"))
+    ax.set_xticks(noy.index)
     col1_1.pyplot(nb_obs_year_fig)
     
     col0_2.markdown('### Quality grade proportion')
