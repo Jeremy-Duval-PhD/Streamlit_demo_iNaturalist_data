@@ -18,7 +18,6 @@ def test_get_1st_cat():
     df = pd.DataFrame(clean_data)
     assert _get_1st_cat(pd.DataFrame(), None) == None
     assert _get_1st_cat(df, 'quality_grade') == 'research'
-    assert _get_1st_cat(df, 'common_name') == 'Reine-des-prés'
     assert _get_1st_cat(df, 'year') == 2017
     
     
@@ -51,20 +50,15 @@ def test_set_title(monkeypatch):
 
     def mock_header(text):
         calls["header"] = text
-
-    def mock_subheader(text):
-        calls["subheader"] = text
         
     
     monkeypatch.setattr(st, "title", mock_title)
     monkeypatch.setattr(st, "header", mock_header)
-    monkeypatch.setattr(st, "subheader", mock_subheader)
     
     set_title(df)
 
-    assert calls["title"] == "Reine-des-prés"
-    assert calls["header"] == "Filipendula ulmaria"
-    assert calls["subheader"] == "Plantae"
+    assert calls["title"] == "Filipendula ulmaria"
+    assert calls["header"] == "Plantae"
     
     
 def test_get_centroids():
