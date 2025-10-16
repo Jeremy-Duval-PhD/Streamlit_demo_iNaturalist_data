@@ -35,16 +35,23 @@ jobs:
     - name: Install dependencies in isolated virtualenv
       run: |
         python -m venv .venv
-        # Ajoute le venv au PATH pour que toutes les étapes utilisent le même
-        echo "${{ github.workspace }}/.venv/bin" >> $GITHUB_PATH
-        pip install --upgrade pip
+        # Active le virtualenv dans cette étape
+        source .venv/bin/activate
+        python -m pip install --upgrade pip
         pip install flake8 pytest
         if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
 
+
     - name: Lint Python files
       run: |
+        source .venv/bin/activate
         flake8 app.py pages tests --count --select=E9,F63,F7,F82 --show-source --statistics --exclude=.venv,__pycache__
         flake8 app.py pages tests --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics --exclude=.venv,__pycache__
+
+    - name: Run tests with pytest
+      run: |
+        source .venv/bin/activate
+        pytest
 
     - name: Run tests with pytest
       run: |
