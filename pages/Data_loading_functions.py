@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 from pyinaturalist import get_observations
-from pyinaturalist.node_api import get_places_autocomplete
+from pyinaturalist.v1.places import get_places_autocomplete
 import time
 import random
 
